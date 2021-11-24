@@ -1,6 +1,5 @@
 try:
-    from pydruid.db import connect
-
+    from firebolt_db.firebolt_connector import Connection
     enabled = True
 except ImportError:
     enabled = False
@@ -12,7 +11,7 @@ from redash.utils import json_dumps, json_loads
 TYPES_MAP = {1: TYPE_STRING, 2: TYPE_INTEGER, 3: TYPE_BOOLEAN}
 
 
-class Druid(BaseQueryRunner):
+class Firebolt(BaseQueryRunner):
     noop_query = "SELECT 1"
 
     @classmethod
@@ -21,13 +20,13 @@ class Druid(BaseQueryRunner):
             "type": "object",
             "properties": {
                 "host": {"type": "string", "default": "localhost"},
-                "port": {"type": "number", "default": 8082},
-                "scheme": {"type": "string", "default": "http"},
+                "port": {"type": "string", "default": 8123},
+                "DB": {"type": "string"},
                 "user": {"type": "string"},
                 "password": {"type": "string"},
             },
-            "order": ["scheme", "host", "port", "user", "password"],
-            "required": ["host"],
+            "order": ["host", "port", "user", "password", "DB"],
+            "required": ["user","password"],
             "secret": ["password"],
         }
 
@@ -36,13 +35,12 @@ class Druid(BaseQueryRunner):
         return enabled
 
     def run_query(self, query, user):
-        connection = connect(
+        connection = Connection(
             host=self.configuration["host"],
             port=self.configuration["port"],
-            path="/druid/v2/sql/",
-            scheme=(self.configuration.get("scheme") or "http"),
-            user=(self.configuration.get("user") or None),
+            username=(self.configuration.get("user") or None),
             password=(self.configuration.get("password") or None),
+            db_name=(self.configuration.get("DB") or None),
         )
 
         cursor = connection.cursor()
@@ -59,11 +57,11 @@ class Druid(BaseQueryRunner):
             data = {"columns": columns, "rows": rows}
             error = None
             json_data = json_dumps(data)
-            print(json_data)
         finally:
             connection.close()
 
         return json_data, error
+
 
     def get_schema(self, get_stats=False):
         query = """
@@ -83,14 +81,14 @@ class Druid(BaseQueryRunner):
         results = json_loads(results)
 
         for row in results["rows"]:
-            table_name = "{}.{}".format(row["TABLE_SCHEMA"], row["TABLE_NAME"])
+            table_name = "{}.{}".format(row["table_schema"], row["table_name"])
 
             if table_name not in schema:
                 schema[table_name] = {"name": table_name, "columns": []}
 
-            schema[table_name]["columns"].append(row["COLUMN_NAME"])
+            schema[table_name]["columns"].append(row["column_name"])
 
         return list(schema.values())
 
 
-register(Druid)
+register(Firebolt)
